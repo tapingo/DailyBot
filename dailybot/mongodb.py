@@ -1,0 +1,190 @@
+import os
+from datetime import date
+
+from dacite import from_dict
+from dataclasses import dataclass, asdict, field
+from functools import lru_cache
+from typing import List, Optional, Dict
+
+from pymongo import MongoClient
+
+
+MONGODB_USERNAME = "MONGODB_USERNAME"
+MONGODB_PASSWORD = "MONGODB_PASSWORD"
+CLUSTER_NAME = "CLUSTER_NAME"
+MONGODB_DATABASE = "MONGODB_DATABASE"
+
+
+DAILY_DB = 'daily'
+REPORTS_DB = 'reports'
+USERS_COLLECTION_NAME = 'users'
+TEAMS_COLLECTION_NAME = 'teams'
+DAILIES_COLLECTION_NAME = 'dailys'
+
+
+@dataclass
+class DailyIssueReport:
+    key: str
+    status: Optional[str] = field(init=False)
+    details: Optional[str] = field(init=False)
+
+
+@dataclass
+class DailyReport:
+    issue_reports: List[DailyIssueReport]
+    general_comments: Optional[str]
+
+
+@dataclass
+class Daily:
+    team_id: str
+    reports: Dict[str, DailyReport] = field(default_factory=dict)  # user_id: DailyReport
+    date: Optional[str] = None
+    _id: Optional[str] = None
+
+    @staticmethod
+    def _format_id(daily_date, team_id):
+        return f"{daily_date}|{team_id}"
+
+    @property
+    def formatted_id(self):
+        return self._format_id(self.date, self.team_id)
+
+    def __post_init__(self):
+        self.date = self.date or str(date.today())
+        self._id = self.formatted_id
+
+    def save_in_db(self):
+        dailies_collection = get_collection(DAILIES_COLLECTION_NAME)
+        dailies_collection.replace_one({"_id": self.formatted_id}, asdict(self), upsert=True)
+
+    @classmethod
+    def get_from_db(cls, team_id: str, daily_date: Optional[str] = None) -> "Daily":
+        daily_date = daily_date or str(date.today())
+        dailies_collection = get_collection(DAILIES_COLLECTION_NAME)
+        daily: dict = dailies_collection.find_one({"_id": cls._format_id(daily_date, team_id)})
+        return from_dict(cls, daily) if daily else cls(team_id=team_id, date=daily_date)
+
+
+@dataclass
+class Team:
+    name: str
+    daily_channel: str
+    _id: Optional[str] = None
+
+    def __post_init__(self):
+        self._id = self.name
+
+    def save_in_db(self):
+        teams_collection = get_collection(TEAMS_COLLECTION_NAME)
+        teams_collection.insert_one(asdict(self))
+
+    @classmethod
+    def get_from_db(cls, team_id) -> "Team":
+        teams_collection = get_collection(TEAMS_COLLECTION_NAME)
+        team: dict = teams_collection.find_one({"_id": team_id})
+        if team:
+            return from_dict(cls, team)
+
+    @classmethod
+    def get_all_teams_from_db(cls) -> List["Team"]:
+        teams_collection = get_collection(TEAMS_COLLECTION_NAME)
+        return [from_dict(cls, team) for team in teams_collection.find({})]
+
+
+@dataclass
+class SlackUserData:
+    team_id: str
+    team_domain: str
+    user_id: str
+    user_name: str
+
+
+@dataclass
+class User:
+    team: str
+    jira_server_url: str
+    jira_api_token: str
+    jira_email: str
+    slack_data: SlackUserData
+    jira_keys: Optional[List[str]] = field(default_factory=list)
+    _id: Optional[str] = None
+
+    def __post_init__(self):
+        self._id = self.slack_data.user_id
+
+    def save_in_db(self):
+        users_collection = get_collection(USERS_COLLECTION_NAME)
+        users_collection.insert_one(asdict(self))
+
+    def update_jira_keys(self, jira_keys):
+        users_collection = get_collection(USERS_COLLECTION_NAME)
+        users_collection.update_one({"_id": self._id}, {"$set": {"jira_keys": jira_keys}})
+
+    @classmethod
+    def get_from_db(cls, user_id: str) -> Optional["User"]:
+        users_collection = get_collection(USERS_COLLECTION_NAME)
+        user: dict = users_collection.find_one({"_id": user_id})
+        if user:
+            return from_dict(cls, user)
+
+
+def get_database():
+    username = os.environ.get(MONGODB_USERNAME)
+    password = os.environ.get(MONGODB_PASSWORD)
+    cluster_name = os.environ.get(CLUSTER_NAME)
+
+    # Provide the mongodb atlas url to connect python to mongodb using pymongo
+    connection_string = f"mongodb+srv://{username}:{password}@{cluster_name}.mongodb.net/?retryWrites=true&w=majority"
+
+    # Create a connection using MongoClient. You can import MongoClient or use pymongo.MongoClient
+    client = MongoClient(connection_string)
+
+    # Create the database for our example (we will use the same database throughout the tutorial
+    return client
+
+
+@lru_cache()
+def get_daily_reports_database():
+    database = get_database()
+    return database[DAILY_DB]
+
+
+@lru_cache
+def get_collection(collection_name: str):
+    return get_daily_reports_database()[collection_name]
+
+
+def get_users() -> List[User]:
+    users_collection = get_collection(USERS_COLLECTION_NAME)
+    return [from_dict(User, user) for user in users_collection.find({})]
+
+
+if __name__ == '__main__':
+    db = get_daily_reports_database()
+    # users_collection = get_collection(USERS_DB)
+    # user = User(
+    #     slack_data=SlackUserData(
+    #         team_id='T04MTM2LY',
+    #         team_domain='tapingo',
+    #         user_id='U020JKP23SR',
+    #         user_name='ttugendhaft'
+    #     ),
+    #     team='Edge',
+    #     jira_email=os.environ.get('JIRA_MAIL'),
+    #     jira_api_token=os.environ.get('JIRA_API_TOKEN'),
+    #     jira_keys=['EDGE'],
+    #
+    # )
+    # user_1 = {
+    #     "_id": "U020JKP23SR",
+    #     **asdict(user)
+    # }
+    # users_collection.insert_one(user_1)
+
+    # teams_collection = get_collection(TEAMS_COLLECTION_NAME)
+    # team_edge = TeamData(name="Edge", daily_channel="edge-squad-dailys")
+    # teams_collection.insert_one({"_id": "Edge", **asdict(team_edge)})
+
+    teams = get_teams()
+    pass

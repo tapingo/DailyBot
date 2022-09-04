@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "dailybot"
+version = "0.0.1"
+description = "Daily Bot"
+authors = ["IamTugy <tugmica@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+
+[project]
+name = "DailyBot"
+description = "Daily Bot"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.8,<4"
+jira = "^3.2.0"
+slack-bolt = "^1.14.3"
+urllib3 = "^1.26.12"
+pymongo = "^4.2.0"
+dnspython = "^2.2.1"
+dacite = "^1.6.0"
+
+[tool.poetry.dev-dependencies]
+ipython = "^8.4.0"
+ipdb = "^0.13.9"
+
+[tool.poetry.scripts]
+dailybot = "dailybot.main:run"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
