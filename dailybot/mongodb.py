@@ -77,7 +77,7 @@ class Team:
 
     def save_in_db(self):
         teams_collection = get_collection(TEAMS_COLLECTION_NAME)
-        teams_collection.insert_one(asdict(self))
+        teams_collection.replace_one({"_id": self._id}, asdict(self), upsert=True)
 
     @classmethod
     def get_from_db(cls, team_id) -> "Team":
@@ -158,33 +158,3 @@ def get_collection(collection_name: str):
 def get_users() -> List[User]:
     users_collection = get_collection(USERS_COLLECTION_NAME)
     return [from_dict(User, user) for user in users_collection.find({})]
-
-
-if __name__ == '__main__':
-    db = get_daily_reports_database()
-    # users_collection = get_collection(USERS_DB)
-    # user = User(
-    #     slack_data=SlackUserData(
-    #         team_id='T04MTM2LY',
-    #         team_domain='tapingo',
-    #         user_id='U020JKP23SR',
-    #         user_name='ttugendhaft'
-    #     ),
-    #     team='Edge',
-    #     jira_email=os.environ.get('JIRA_MAIL'),
-    #     jira_api_token=os.environ.get('JIRA_API_TOKEN'),
-    #     jira_keys=['EDGE'],
-    #
-    # )
-    # user_1 = {
-    #     "_id": "U020JKP23SR",
-    #     **asdict(user)
-    # }
-    # users_collection.insert_one(user_1)
-
-    # teams_collection = get_collection(TEAMS_COLLECTION_NAME)
-    # team_edge = TeamData(name="Edge", daily_channel="edge-squad-dailys")
-    # teams_collection.insert_one({"_id": "Edge", **asdict(team_edge)})
-
-    teams = get_teams()
-    pass

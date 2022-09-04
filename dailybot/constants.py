@@ -1,4 +1,5 @@
 DAILY_MODAL = "daily"
+ADD_TEAM = "/add-team-daily"
 SHOW_DAILY = "/show-daily-report"
 DAILY_MODAL_SUBMISSION = "daily_modal_submission"
 SELECT_STATUS_ACTION = "select_status_action"

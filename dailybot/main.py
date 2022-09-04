@@ -9,7 +9,7 @@ from dailybot.block_utils import generate_daily_modal, generate_home_tab_view, g
     generate_daily_message
 from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR, SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, \
-    DAILY_MODAL, SHOW_DAILY
+    DAILY_MODAL, SHOW_DAILY, ADD_TEAM
 from dailybot.jira_utils import get_my_issues, update_daily_report_status, get_optional_statuses
 from dailybot.mongodb import Team, User, Daily, DailyIssueReport, DailyReport
 
@@ -171,6 +171,14 @@ def show_daily(ack, respond, command):
         text="Daily Report",
         blocks=blocks
     )
+
+
+@app.command(ADD_TEAM)
+def add_team(ack, respond, command):
+    ack()
+    name, daily_channel = command['text'].split()
+    Team(name, daily_channel).save_in_db()
+    respond(f"Added team {name} with daily channel {daily_channel}")
 
 
 def run():

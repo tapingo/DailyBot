@@ -329,7 +329,8 @@ def generate_home_tab_view_user_configured():
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "Use `/daily` to fill out daily form"
+                    "text": "Click the + button in the text area and write `daily`. "
+                            "click `daily with Daily Bot` to fill out daily form."
                 }
             },
             {
