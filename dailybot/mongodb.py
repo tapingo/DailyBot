@@ -116,10 +116,12 @@ class User:
     def save_in_db(self):
         users_collection = get_collection(USERS_COLLECTION_NAME)
         users_collection.insert_one(asdict(self))
+        return self
 
     def update_jira_keys(self, jira_keys):
         users_collection = get_collection(USERS_COLLECTION_NAME)
         users_collection.update_one({"_id": self._id}, {"$set": {"jira_keys": jira_keys}})
+        return self
 
     @classmethod
     def get_from_db(cls, user_id: str) -> Optional["User"]:

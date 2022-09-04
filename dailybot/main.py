@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from typing import Tuple, List, Optional, Dict
 
 from slack_bolt import App
@@ -19,22 +20,20 @@ app = App(
 )
 
 
+slack_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
+
+
 @app.shortcut(DAILY_MODAL)
 def daily_report(ack, body, client):
     ack()
     user_id = body['user']['id']
     user = User.get_from_db(user_id)
-    if user:
-        client.views_open(
-            trigger_id=body["trigger_id"],
-            view=generate_daily_modal(
-                user=user,
-                issues=get_my_issues(user)
-            )
-        )
+    daily = Daily.get_from_db(user.slack_data.team_id)
+
     client.views_open(
         trigger_id=body["trigger_id"],
-        view=generate_daily_modal(user=user, issues=get_my_issues(user)) if user else generate_user_not_exists_modal()
+        view=(generate_daily_modal(user=user, issues=get_my_issues(user), daily=daily)
+              if user else generate_user_not_exists_modal())
     )
 
 
@@ -107,39 +106,27 @@ def handle_daily_submission(ack, body, client, view, logger):
 def update_home_tab(client, event, logger):
     user_id = event['user']
     user = User.get_from_db(user_id)
-    if user:
-        # User is already created
-        if not user.jira_keys:
+    if not user:
+        try:
+            # views.publish is the method that your app uses to push a view to the Home tab
             client.views_publish(
-                user_id=user_id,
-                view=generate_home_tab_view_set_jira_keys(user)
+                user_id=event["user"],
+                view=generate_home_tab_view(teams=Team.get_all_teams_from_db())
             )
-            return
 
-        else:
-            client.views_publish(
-                user_id=user_id,
-                view=generate_home_tab_view_user_configured()
-            )
-            return
-
-    try:
-        # views.publish is the method that your app uses to push a view to the Home tab
-        client.views_publish(
-            user_id=event["user"],
-            view=generate_home_tab_view(teams=Team.get_all_teams_from_db())
-        )
-
-    except Exception as e:
-        logger.error(f"Error publishing home tab: {e}")
+        except Exception as e:
+            logger.error(f"Error publishing home tab: {e}")
 
 
 @app.action(SAVE_USER_CONFIGURATIONS)
 def save_user_config_action(ack, body, logger):
     ack()
     logger.info(body)
-    generate_user_from_config_action(body).save_in_db()
-    ack()
+    user = generate_user_from_config_action(body).save_in_db()
+    slack_client.views_publish(
+        user_id=user.slack_data.user_id,
+        view=generate_home_tab_view_set_jira_keys(user)
+    )
 
 
 @app.action(SELECT_USER_BOARD)
@@ -151,6 +138,11 @@ def select_user_board_action(ack, body, logger):
         option['value']
         for option in body['view']['state']['values'][SELECT_USER_BOARD][SELECT_USER_BOARD]['selected_options']
     ])
+
+    slack_client.views_publish(
+        user_id=user.slack_data.user_id,
+        view=generate_home_tab_view_user_configured()
+    )
 
 
 @app.action(SELECT_USER_TEAM)

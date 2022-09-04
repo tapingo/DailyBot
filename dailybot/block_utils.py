@@ -43,7 +43,7 @@ class SlackSelectorOption:
 
 def generate_issue_status_selector_component(status: Status) -> dict:
     initial_option = SlackSelectorOption(status.name).as_dict()
-    aa = {
+    return {
         "type": "static_select",
         "placeholder": {
             "type": "plain_text",
@@ -54,10 +54,13 @@ def generate_issue_status_selector_component(status: Status) -> dict:
         "options": [SlackSelectorOption(s).as_dict() for s in ISSUE_STATUSES],
         "action_id": SELECT_STATUS_ACTION
     }
-    return aa
 
 
-def generate_issue_report_component(issue: Issue):
+def generate_issue_report_component(issue: Issue, issue_reports: List[DailyIssueReport]):
+    issue_report = None
+    for report in issue_reports:
+        if report.key == issue.key:
+            issue_report = report
     return [
         {
             "type": "header",
@@ -101,14 +104,26 @@ def generate_issue_report_component(issue: Issue):
                 "emoji": True
             }
         },
+        *([{
+            "type": "context",
+            "elements": [
+                {
+                    "type": "plain_text",
+                    "text": f"Stored data: {issue_report.details}",
+                    "emoji": True
+                }
+            ]
+        }] if issue_report and issue_report.details else []),
         DIVIDER
     ]
 
 
-def generate_daily_modal(user: User, issues: List[Issue]):
+def generate_daily_modal(user: User, issues: List[Issue], daily: Daily):
+    reports = daily.reports.get(user.slack_data.user_id)
+    issue_reports = reports.issue_reports if reports else []
     issue_report_components = [
         component
-        for issue in issues for component in generate_issue_report_component(issue)
+        for issue in issues for component in generate_issue_report_component(issue, issue_reports)
     ]
     return {
         "type": "modal",
@@ -134,7 +149,8 @@ def generate_daily_modal(user: User, issues: List[Issue]):
                 "text": {
                     "type": "mrkdwn",
                     "text": f"*Hi <@{user.slack_data.user_id}>!* Please change the statuses of the following issues "
-                            f"to the updated status, and add comments of the progress of the issues."
+                            f"to the updated status, and add comments of the progress of the issues. if you re-fill "
+                            f"this form, copy the stored data to the input box"
                 }
             },
             *issue_report_components,
@@ -151,8 +167,18 @@ def generate_daily_modal(user: User, issues: List[Issue]):
                     "type": "plain_text",
                     "text": "Other comments / blockers",
                     "emoji": True
-                }
-            }
+                },
+            },
+            *([{
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "plain_text",
+                        "text": f"Stored data: {reports.general_comments}",
+                        "emoji": True
+                    }
+                ]
+            }] if reports and reports.general_comments else []),
         ]
     }
 
@@ -385,12 +411,23 @@ def generate_user_not_exists_modal():
                 "text": {
                     "type": "mrkdwn",
                     "text": "Press the `Add apps` button in the bottom left corner (bottom of the users list) "
-                            "and add the `DailyBot` app, all the configurations are in the home tab.",
-                    "emoji": True
+                            "and add the `DailyBot` app, all the configurations are in the home tab. "
+                            "It might not work the first time so please try again :P"
                 }
             }
         ]
     }
+
+
+def generate_text_section_if_not_empty(text):
+    return [{
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": ":speech_balloon: " + text,
+            "emoji": True
+        }
+    }] if text else []
 
 
 def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
@@ -429,14 +466,7 @@ def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
                 "action_id": "button-action"
             }
         },
-        {
-            "type": "section",
-            "text": {
-                "type": "plain_text",
-                "text": issue.details or "No Details",
-                "emoji": True
-            }
-        },
+        *generate_text_section_if_not_empty(issue.details),
         DIVIDER
     ]
 
@@ -449,33 +479,34 @@ def generate_daily_for_user(user: User, daily: Daily):
                 for daily_issue in report.issue_reports
                 for component in generate_issue_for_daily_message(user, daily_issue)
             ]),
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": "General Comments",
-                    "emoji": True
-                }
-            },
-            {
-                "type": "context",
-                "elements": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"<@{user.slack_data.user_id}>"
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "plain_text",
-                    "text": report.general_comments or "No Details",
-                    "emoji": True
-                }
-            },
-            DIVIDER
-
+            *([
+                  {
+                      "type": "header",
+                      "text": {
+                          "type": "plain_text",
+                          "text": "General Comments",
+                          "emoji": True
+                      }
+                  },
+                  {
+                      "type": "context",
+                      "elements": [
+                          {
+                              "type": "mrkdwn",
+                              "text": f"<@{user.slack_data.user_id}>"
+                          }
+                      ]
+                  },
+                  {
+                      "type": "section",
+                      "text": {
+                          "type": "plain_text",
+                          "text": report.general_comments,
+                          "emoji": True
+                      }
+                  },
+                  DIVIDER
+              ] if report.general_comments else []),
         ]
         for report in daily.reports.values()
     ]
