@@ -4,7 +4,7 @@ from typing import List
 
 from jira import JIRA, Issue, Project, JIRAError
 
-from dailybot.mongodb import User, Daily
+from dailybot.mongodb import User, Daily, DailyIssueReport
 
 
 @lru_cache
@@ -55,7 +55,7 @@ def get_my_issues(user: User) -> List[Issue]:
     )
     while user.jira_keys:  # if user has no jira keys don't enter
         chunk = jira_client.search_issues(
-            f'assignee = currentUser() and project = {user.jira_keys[0]} and status != DONE and status != "TO DO"',
+            f'assignee = currentUser() and project in ({", ".join(user.jira_keys)}) and status not in (DONE, "TO DO")',
             startAt=i, maxResults=chunk_size)
         i += chunk_size
         issues += chunk.iterable
@@ -85,7 +85,7 @@ def get_transition_name(user: User, issue_key: str, to_status: str):
             return transition['name']
 
 
-def update_daily_report_status(user: User, daily: Daily):
+def update_daily_report_status(user: User, daily: Daily, logger):
     jira_client = get_jira(
         jira_server_url=user.jira_server_url,
         jira_email=user.jira_email,
@@ -95,4 +95,7 @@ def update_daily_report_status(user: User, daily: Daily):
     for issue in daily_report.issue_reports:
         transition = get_transition_name(user, issue_key=issue.key, to_status=issue.status)
         if transition:
-            jira_client.transition_issue(issue.key, transition=transition)
+            try:
+                jira_client.transition_issue(issue.key, transition=transition)
+            except JIRAError:
+                logger.info(f"could not move issue {issue.key} to `{issue.status}` status")

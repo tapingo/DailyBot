@@ -1,16 +1,14 @@
 import os
-from functools import lru_cache
 from typing import Tuple, List, Optional, Dict
 
 from slack_bolt import App
-from slack_sdk import WebClient
 
 from dailybot.block_utils import generate_daily_modal, generate_home_tab_view, generate_user_from_config_action, \
     generate_home_tab_view_set_jira_keys, generate_home_tab_view_user_configured, generate_user_not_exists_modal, \
     generate_daily_message
 from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR, SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, \
-    DAILY_MODAL, SHOW_DAILY, ADD_TEAM
+    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, BULK_ID_FORMAT
 from dailybot.jira_utils import get_my_issues, update_daily_report_status, get_optional_statuses
 from dailybot.mongodb import Team, User, Daily, DailyIssueReport, DailyReport
 
@@ -20,12 +18,8 @@ app = App(
 )
 
 
-slack_client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
-
-
 @app.shortcut(DAILY_MODAL)
 def daily_report(ack, body, client):
-    ack()
     user_id = body['user']['id']
     user = User.get_from_db(user_id)
     daily = Daily.get_from_db(user.slack_data.team_id)
@@ -35,11 +29,11 @@ def daily_report(ack, body, client):
         view=(generate_daily_modal(user=user, issues=get_my_issues(user), daily=daily)
               if user else generate_user_not_exists_modal())
     )
+    ack()
 
 
 @app.action(SELECT_STATUS_ACTION)
-def select_status_action(ack, body, logger):
-    ack()
+def select_status_action(ack, body):
     status = body['actions'][0]['selected_option']['value']
     issue_key, _ = body['actions'][0]['block_id'].split(BULK_ID_SEPERATOR)
     user_id = body['user']['id']
@@ -49,17 +43,19 @@ def select_status_action(ack, body, logger):
         issue_key=issue_key
     )
     if status not in optional_statuses:
-        pass
+        # TODO: add error to view somehow
+        return
+    ack()
 
 
 @app.action(ISSUE_LINK_ACTION)
-def issue_link_action(ack, body, logger):
+def issue_link_action(ack):
     ack()
 
 
 @app.action(ISSUE_SUMMERY_ACTION)
-def issue_summery_action(ack, body, logger):
-    pass
+def issue_summery_action(ack):
+    ack()
 
 
 @app.action(GENERAL_COMMENTS_ACTION)
@@ -86,8 +82,7 @@ def get_details_from_view(view: dict) -> Tuple[List[DailyIssueReport], Optional[
 
 
 @app.view(DAILY_MODAL_SUBMISSION)
-def handle_daily_submission(ack, body, client, view, logger):
-    ack()
+def handle_daily_submission(ack, body, view, logger):
     user = User.get_from_db(body['user']['id'])
     issue_reports, general_comments = get_details_from_view(view)
     daily = Daily.get_from_db(user.slack_data.team_id)
@@ -97,9 +92,9 @@ def handle_daily_submission(ack, body, client, view, logger):
     )
 
     # Update Jira:
-    update_daily_report_status(user=user, daily=daily)
-
+    update_daily_report_status(user=user, daily=daily, logger=logger)
     daily.save_in_db()
+    ack()
 
 
 @app.event("app_home_opened")
@@ -119,30 +114,29 @@ def update_home_tab(client, event, logger):
 
 
 @app.action(SAVE_USER_CONFIGURATIONS)
-def save_user_config_action(ack, body, logger):
+def save_user_config_action(ack, body, client):
     ack()
-    logger.info(body)
     user = generate_user_from_config_action(body).save_in_db()
-    slack_client.views_publish(
+    app.client.views_publish(
         user_id=user.slack_data.user_id,
         view=generate_home_tab_view_set_jira_keys(user)
     )
 
 
 @app.action(SELECT_USER_BOARD)
-def select_user_board_action(ack, body, logger):
-    ack()
-
+def select_user_board_action(ack, body):
     user = User.get_from_db(body['user']['id'])
     user.update_jira_keys([
         option['value']
         for option in body['view']['state']['values'][SELECT_USER_BOARD][SELECT_USER_BOARD]['selected_options']
     ])
 
-    slack_client.views_publish(
+    app.client.views_publish(
         user_id=user.slack_data.user_id,
         view=generate_home_tab_view_user_configured()
     )
+
+    ack()
 
 
 @app.action(SELECT_USER_TEAM)
@@ -152,17 +146,16 @@ def select_user_team_action(ack, body, logger):
 
 
 @app.command(SHOW_DAILY)
-def show_daily(ack, respond, command):
-    ack()
+def show_daily(ack, command, client):
     user = User.get_from_db(command['user_id'])
     daily = Daily.get_from_db(command['team_id'])
-    client = WebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
     blocks = generate_daily_message(user, daily)
     client.chat_postMessage(
         channel=command['channel_id'],
         text="Daily Report",
         blocks=blocks
     )
+    ack()
 
 
 @app.command(ADD_TEAM)
