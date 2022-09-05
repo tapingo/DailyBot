@@ -8,8 +8,8 @@ from dailybot.block_utils import generate_daily_modal, generate_home_tab_view, g
     generate_daily_message
 from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR, SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, \
-    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, BULK_ID_FORMAT
-from dailybot.jira_utils import get_my_issues, update_daily_report_status, get_optional_statuses
+    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, SAVE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, TYPE_USER_BOARD
+from dailybot.jira_utils import get_my_issues, update_daily_report_status_and_enrich_status, get_optional_statuses
 from dailybot.mongodb import Team, User, Daily, DailyIssueReport, DailyReport
 
 app = App(
@@ -22,7 +22,7 @@ app = App(
 def daily_report(ack, body, client):
     user_id = body['user']['id']
     user = User.get_from_db(user_id)
-    daily = Daily.get_from_db(user.slack_data.team_id)
+    daily = Daily.get_from_db(user.team)
 
     client.views_open(
         trigger_id=body["trigger_id"],
@@ -37,6 +37,7 @@ def select_status_action(ack, body):
     status = body['actions'][0]['selected_option']['value']
     issue_key, _ = body['actions'][0]['block_id'].split(BULK_ID_SEPERATOR)
     user_id = body['user']['id']
+    ack()
     user = User.get_from_db(user_id)
     optional_statuses = get_optional_statuses(
         user=user,
@@ -45,7 +46,6 @@ def select_status_action(ack, body):
     if status not in optional_statuses:
         # TODO: add error to view somehow
         return
-    ack()
 
 
 @app.action(ISSUE_LINK_ACTION)
@@ -85,22 +85,23 @@ def get_details_from_view(view: dict) -> Tuple[List[DailyIssueReport], Optional[
 def handle_daily_submission(ack, body, view, logger):
     user = User.get_from_db(body['user']['id'])
     issue_reports, general_comments = get_details_from_view(view)
-    daily = Daily.get_from_db(user.slack_data.team_id)
+    daily = Daily.get_from_db(user.team)
     daily.reports[user.slack_data.user_id] = DailyReport(
         issue_reports=issue_reports,
         general_comments=general_comments
     )
+    ack()
 
     # Update Jira:
-    update_daily_report_status(user=user, daily=daily, logger=logger)
+    update_daily_report_status_and_enrich_status(user=user, daily=daily, logger=logger)
     daily.save_in_db()
-    ack()
 
 
 @app.event("app_home_opened")
 def update_home_tab(client, event, logger):
     user_id = event['user']
     user = User.get_from_db(user_id)
+
     if not user:
         try:
             # views.publish is the method that your app uses to push a view to the Home tab
@@ -111,25 +112,52 @@ def update_home_tab(client, event, logger):
 
         except Exception as e:
             logger.error(f"Error publishing home tab: {e}")
+        return
+
+    if not user.jira_keys:
+        app.client.views_publish(
+            user_id=user.slack_data.user_id,
+            view=generate_home_tab_view_set_jira_keys(user)
+        )
+        return
+
+    app.client.views_publish(
+        user_id=user.slack_data.user_id,
+        view=generate_home_tab_view_user_configured()
+    )
 
 
 @app.action(SAVE_USER_CONFIGURATIONS)
 def save_user_config_action(ack, body, client):
-    ack()
     user = generate_user_from_config_action(body).save_in_db()
-    app.client.views_publish(
+    client.views_publish(
         user_id=user.slack_data.user_id,
         view=generate_home_tab_view_set_jira_keys(user)
     )
-
+    ack()
 
 @app.action(SELECT_USER_BOARD)
 def select_user_board_action(ack, body):
     user = User.get_from_db(body['user']['id'])
-    user.update_jira_keys([
+    jira_keys = [
         option['value']
-        for option in body['view']['state']['values'][SELECT_USER_BOARD][SELECT_USER_BOARD]['selected_options']
-    ])
+        for option in body['view']['state']['values'][TYPE_OR_SELECT_USER_BOARD][SELECT_USER_BOARD]['selected_options']
+    ]
+    user.update_jira_keys(jira_keys)
+
+    app.client.views_publish(
+        user_id=user.slack_data.user_id,
+        view=generate_home_tab_view_user_configured()
+    )
+
+    ack()
+
+
+@app.action(SAVE_USER_BOARD)
+def select_user_board_action(ack, body):
+    user = User.get_from_db(body['user']['id'])
+    jira_keys = body['view']['state']['values'][TYPE_OR_SELECT_USER_BOARD][TYPE_USER_BOARD]['value'].split(',')
+    user.update_jira_keys(jira_keys)
 
     app.client.views_publish(
         user_id=user.slack_data.user_id,
@@ -141,15 +169,16 @@ def select_user_board_action(ack, body):
 
 @app.action(SELECT_USER_TEAM)
 def select_user_team_action(ack, body, logger):
-    ack()
     logger.info(body)
+    ack()
 
 
 @app.command(SHOW_DAILY)
 def show_daily(ack, command, client):
+    with_gui = 'gui' in command.get('text', '')
     user = User.get_from_db(command['user_id'])
-    daily = Daily.get_from_db(command['team_id'])
-    blocks = generate_daily_message(user, daily)
+    daily = Daily.get_from_db(user.team)
+    blocks = generate_daily_message(user, daily, with_gui=with_gui)
     client.chat_postMessage(
         channel=command['channel_id'],
         text="Daily Report",

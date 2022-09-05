@@ -6,8 +6,9 @@ from jira.resources import Status
 
 from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_FORMAT, SAVE_USER_CONFIGURATIONS, SELECT_USER_TEAM, SELECT_USER_BOARD, \
-    JIRA_EMAIL_ACTION, JIRA_API_TOKEN_ACTION, JIRA_SERVER_ACTION
-from dailybot.jira_utils import get_jira_projects, get_issue
+    JIRA_EMAIL_ACTION, JIRA_API_TOKEN_ACTION, JIRA_SERVER_ACTION, JiraHostType, JIRA_HOST_TYPE, MAX_LEN_SLACK_SELECTOR, \
+    TYPE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, SAVE_USER_BOARD
+from dailybot.jira_utils import get_jira_projects, get_optional_transitions, get_optional_statuses
 from dailybot.mongodb import Team, User, SlackUserData, Daily, DailyIssueReport
 
 DIVIDER = {"type": "divider"}
@@ -41,8 +42,9 @@ class SlackSelectorOption:
         }
 
 
-def generate_issue_status_selector_component(status: Status) -> dict:
+def generate_issue_status_selector_component(status: Status, optional_statuses: List[str] = ISSUE_STATUSES) -> dict:
     initial_option = SlackSelectorOption(status.name).as_dict()
+    options = [initial_option, *(SlackSelectorOption(s).as_dict() for s in optional_statuses if s != status.name)]
     return {
         "type": "static_select",
         "placeholder": {
@@ -51,12 +53,12 @@ def generate_issue_status_selector_component(status: Status) -> dict:
             "emoji": True
         },
         "initial_option": initial_option,
-        "options": [SlackSelectorOption(s).as_dict() for s in ISSUE_STATUSES],
+        "options": options,
         "action_id": SELECT_STATUS_ACTION
     }
 
 
-def generate_issue_report_component(issue: Issue, issue_reports: List[DailyIssueReport]):
+def generate_issue_report_component(user: User, issue: Issue, issue_reports: List[DailyIssueReport]):
     issue_report = None
     for report in issue_reports:
         if report.key == issue.key:
@@ -75,7 +77,11 @@ def generate_issue_report_component(issue: Issue, issue_reports: List[DailyIssue
             "block_id": BULK_ID_FORMAT.format(key=issue.key, action=SELECT_STATUS_ACTION),
             "elements": [
                 generate_issue_status_selector_component(
-                    status=issue.get_field('status')
+                    status=issue.get_field('status'),
+                    optional_statuses=get_optional_statuses(
+                        user=user,
+                        issue_key=issue.key
+                    )
                 ),
                 {
                     "type": "button",
@@ -123,7 +129,7 @@ def generate_daily_modal(user: User, issues: List[Issue], daily: Daily):
     issue_reports = reports.issue_reports if reports else []
     issue_report_components = [
         component
-        for issue in issues for component in generate_issue_report_component(issue, issue_reports)
+        for issue in issues for component in generate_issue_report_component(user, issue, issue_reports)
     ]
     return {
         "type": "modal",
@@ -220,12 +226,35 @@ def generate_home_tab_view(teams: List[Team]):
                 },
                 "hint": {
                     "type": "plain_text",
-                    "text": "https://<your-domain>.atlassian.net/",
+                    "text": "https://<your-domain>.atlassian.net/ (if using cloud)  *<!> Dont forget the 'https://'*",
                 },
                 "label": {
                     "type": "plain_text",
                     "text": "Jira server url",
                     "emoji": True
+                }
+            },
+            {
+                "type": "input",
+                "block_id": JIRA_HOST_TYPE,
+                "label": {
+                    "type": "plain_text",
+                    "text": "Select your Jira host type",
+                    "emoji": True
+                },
+                "element": {
+                    "type": "static_select",
+                    "placeholder": {
+                        "type": "plain_text",
+                        "text": "Select options",
+                        "emoji": True
+                    },
+                    "initial_option": SlackSelectorOption(text=JiraHostType.Cloud.name).as_dict(),
+                    "options": [
+                        SlackSelectorOption(text=JiraHostType.Cloud.name).as_dict(),
+                        SlackSelectorOption(text=JiraHostType.Local.name).as_dict()
+                    ],
+                    "action_id": JIRA_HOST_TYPE
                 }
             },
             {
@@ -306,6 +335,67 @@ def generate_home_tab_view(teams: List[Team]):
 def generate_home_tab_view_set_jira_keys(user: User):
     projects = get_jira_projects(user)
 
+    if len(projects) < MAX_LEN_SLACK_SELECTOR:
+        field = [{
+            "type": "section",
+            "block_id": TYPE_OR_SELECT_USER_BOARD,
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Select your Jira boards from the select options*"
+            },
+            "accessory": {
+                "type": "multi_static_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Select options",
+                    "emoji": True
+                },
+                "options": [SlackSelectorOption(text=project.key).as_dict() for project in projects],
+                "action_id": SELECT_USER_BOARD
+            }
+        }]
+    else:
+        field = [
+            {
+                "type": "input",
+                "block_id": TYPE_OR_SELECT_USER_BOARD,
+                "label": {
+                    "type": "plain_text",
+                    "text": "Please write you issue keys:",
+                    "emoji": True
+                },
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": TYPE_USER_BOARD
+                }
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "plain_text",
+                        "text": "Please write the keys in a list like so: `EDGE,ULT` with , and no spaces",
+                        "emoji": True
+                    }
+                ]
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Submit",
+                            "emoji": True
+                        },
+                        "value": SAVE_USER_BOARD,
+                        "action_id": SAVE_USER_BOARD
+                    }
+                ]
+            }
+        ]
+
     return {
         "type": "home",
         "blocks": [
@@ -317,24 +407,7 @@ def generate_home_tab_view_set_jira_keys(user: User):
                     "emoji": True
                 }
             },
-            {
-                "type": "section",
-                "block_id": SELECT_USER_BOARD,
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Select your Jira boards from the select options*"
-                },
-                "accessory": {
-                    "type": "multi_static_select",
-                    "placeholder": {
-                        "type": "plain_text",
-                        "text": "Select options",
-                        "emoji": True
-                    },
-                    "options": [SlackSelectorOption(text=project.key).as_dict() for project in projects],
-                    "action_id": SELECT_USER_BOARD
-                }
-            }
+            *field
         ]
     }
 
@@ -380,6 +453,7 @@ def generate_user_from_config_action(body: dict) -> User:
         jira_server_url=values[JIRA_SERVER_ACTION][JIRA_SERVER_ACTION]['value'],
         jira_api_token=values[JIRA_API_TOKEN_ACTION][JIRA_API_TOKEN_ACTION]['value'],
         jira_email=values[JIRA_EMAIL_ACTION][JIRA_EMAIL_ACTION]['value'],
+        jira_host_type=values[JIRA_HOST_TYPE][JIRA_HOST_TYPE]['selected_option']['value'],
         slack_data=SlackUserData(
             team_id=body['team']['id'],
             team_domain=body['team']['domain'],
@@ -430,14 +504,13 @@ def generate_text_section_if_not_empty(text):
     }] if text else []
 
 
-def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
-    jira_issue = get_issue(user, issue.key)
+def generate_issue_for_daily_message(current_user: User, user_id: str, issue: DailyIssueReport):
     return [
         {
             "type": "section",
             "text": {
                 "type": "plain_text",
-                "text": f"{issue.key} - {jira_issue.get_field('summary')}",
+                "text": f"{issue.key} - {issue.summary}",
                 "emoji": True
             }
         },
@@ -451,7 +524,7 @@ def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*<@{user.slack_data.user_id}>*"
+                    "text": f"*<@{user_id}>*"
                 }
             ],
             "accessory": {
@@ -462,7 +535,7 @@ def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
                     "emoji": True
                 },
                 "value": "click_me_123",
-                "url": jira_issue.permalink(),
+                "url": issue.link,
                 "action_id": "button-action"
             }
         },
@@ -471,48 +544,75 @@ def generate_issue_for_daily_message(user: User, issue: DailyIssueReport):
     ]
 
 
-def generate_daily_for_user(user: User, daily: Daily):
+def generate_general_comments_with_gui(general_comments: str, user_id: str):
+    if not general_comments:
+        return []
+
+    return [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "General Comments",
+                "emoji": True
+            }
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"<@{user_id}>"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "plain_text",
+                "text": general_comments,
+                "emoji": True
+            }
+        },
+        DIVIDER
+    ]
+
+
+def generate_daily_for_user_with_gui(user: User, daily: Daily):
     return [
         [
             *([
                 component
                 for daily_issue in report.issue_reports
-                for component in generate_issue_for_daily_message(user, daily_issue)
+                for component in generate_issue_for_daily_message(user, user_id, daily_issue)
             ]),
-            *([
-                  {
-                      "type": "header",
-                      "text": {
-                          "type": "plain_text",
-                          "text": "General Comments",
-                          "emoji": True
-                      }
-                  },
-                  {
-                      "type": "context",
-                      "elements": [
-                          {
-                              "type": "mrkdwn",
-                              "text": f"<@{user.slack_data.user_id}>"
-                          }
-                      ]
-                  },
-                  {
-                      "type": "section",
-                      "text": {
-                          "type": "plain_text",
-                          "text": report.general_comments,
-                          "emoji": True
-                      }
-                  },
-                  DIVIDER
-              ] if report.general_comments else []),
+            *(generate_general_comments_with_gui(report.general_comments, user_id=user_id)),
         ]
-        for report in daily.reports.values()
+        for user_id, report in daily.reports.items()
     ]
 
 
-def generate_daily_message(user: User, daily: Daily):
+def generate_daily_message(user: User, daily: Daily, with_gui: bool = False):
+    if with_gui:
+        blocks = [component for daily_report in generate_daily_for_user_with_gui(user, daily)
+                  for component in daily_report]
+    else:
+        text = '\n'.join([
+            '\n'.join([
+                f"<@{user_id}>:",
+                '\n'.join([
+                    f" - <{issue.link}|{issue.key}> - {issue.status}{f' - {issue.details}' if issue.details else ''}"
+                    for issue in report.issue_reports
+                ])
+            ]) + (f"\n - {report.general_comments}" if report.general_comments else '')
+            for user_id, report in daily.reports.items()])
+        blocks = [{
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": text
+            }
+        }] if text else []
     return [
         {
             "type": "header",
@@ -532,7 +632,5 @@ def generate_daily_message(user: User, daily: Daily):
                 }
             ]
         },
-        *([component
-           for daily_report in generate_daily_for_user(user, daily)
-           for component in daily_report]),
+        *blocks,
     ]

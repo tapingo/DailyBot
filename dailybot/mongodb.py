@@ -8,6 +8,7 @@ from typing import List, Optional, Dict
 
 from pymongo import MongoClient
 
+from dailybot.constants import JiraHostType
 
 MONGODB_USERNAME = "MONGODB_USERNAME"
 MONGODB_PASSWORD = "MONGODB_PASSWORD"
@@ -27,6 +28,8 @@ class DailyIssueReport:
     key: str
     status: Optional[str] = field(init=False)
     details: Optional[str] = field(init=False)
+    link: Optional[str] = field(init=False)
+    summary: Optional[str] = field(init=False)
 
 
 @dataclass
@@ -37,18 +40,18 @@ class DailyReport:
 
 @dataclass
 class Daily:
-    team_id: str
+    team: str
     reports: Dict[str, DailyReport] = field(default_factory=dict)  # user_id: DailyReport
     date: Optional[str] = None
     _id: Optional[str] = None
 
     @staticmethod
-    def _format_id(daily_date, team_id):
-        return f"{daily_date}|{team_id}"
+    def _format_id(daily_date, team):
+        return f"{daily_date}|{team}"
 
     @property
     def formatted_id(self):
-        return self._format_id(self.date, self.team_id)
+        return self._format_id(self.date, self.team)
 
     def __post_init__(self):
         self.date = self.date or str(date.today())
@@ -59,11 +62,11 @@ class Daily:
         dailies_collection.replace_one({"_id": self.formatted_id}, asdict(self), upsert=True)
 
     @classmethod
-    def get_from_db(cls, team_id: str, daily_date: Optional[str] = None) -> "Daily":
+    def get_from_db(cls, team: str, daily_date: Optional[str] = None) -> "Daily":
         daily_date = daily_date or str(date.today())
         dailies_collection = get_collection(DAILIES_COLLECTION_NAME)
-        daily: dict = dailies_collection.find_one({"_id": cls._format_id(daily_date, team_id)})
-        return from_dict(cls, daily) if daily else cls(team_id=team_id, date=daily_date)
+        daily: dict = dailies_collection.find_one({"_id": cls._format_id(daily_date, team)})
+        return from_dict(cls, daily) if daily else cls(team=team, date=daily_date)
 
 
 @dataclass
@@ -80,9 +83,9 @@ class Team:
         teams_collection.replace_one({"_id": self._id}, asdict(self), upsert=True)
 
     @classmethod
-    def get_from_db(cls, team_id) -> "Team":
+    def get_from_db(cls, team) -> "Team":
         teams_collection = get_collection(TEAMS_COLLECTION_NAME)
-        team: dict = teams_collection.find_one({"_id": team_id})
+        team: dict = teams_collection.find_one({"_id": team})
         if team:
             return from_dict(cls, team)
 
@@ -108,6 +111,7 @@ class User:
     jira_email: str
     slack_data: SlackUserData
     jira_keys: Optional[List[str]] = field(default_factory=list)
+    jira_host_type: str = JiraHostType.Cloud.name
     _id: Optional[str] = None
 
     def __post_init__(self):
@@ -115,7 +119,7 @@ class User:
 
     def save_in_db(self):
         users_collection = get_collection(USERS_COLLECTION_NAME)
-        users_collection.insert_one(asdict(self))
+        users_collection.replace_one({"_id": self._id}, asdict(self), upsert=True)
         return self
 
     def update_jira_keys(self, jira_keys):
