@@ -6,9 +6,11 @@ from slack_bolt import App
 from dailybot.block_utils import generate_daily_modal, generate_home_tab_view, generate_user_from_config_action, \
     generate_home_tab_view_set_jira_keys, generate_home_tab_view_user_configured, generate_user_not_exists_modal, \
     generate_daily_message
-from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
+from dailybot.constants import DAILY_MODAL_SUBMISSION, ACTIONS_ISSUE_DAILY_FORM, ISSUE_LINK_ACTION, \
+    ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR, SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, \
-    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, SAVE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, TYPE_USER_BOARD
+    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, SAVE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, TYPE_USER_BOARD, \
+    IGNORE_ISSUE_IN_DAILY_FORM, SELECT_STATUS_ISSUE_DAILY_FORM
 from dailybot.jira_utils import get_my_issues, update_daily_report_status_and_enrich_status, get_optional_statuses
 from dailybot.mongodb import Team, User, Daily, DailyIssueReport, DailyReport
 
@@ -32,20 +34,15 @@ def daily_report(ack, body, client):
     ack()
 
 
-@app.action(SELECT_STATUS_ACTION)
-def select_status_action(ack, body):
-    status = body['actions'][0]['selected_option']['value']
-    issue_key, _ = body['actions'][0]['block_id'].split(BULK_ID_SEPERATOR)
-    user_id = body['user']['id']
+@app.action(IGNORE_ISSUE_IN_DAILY_FORM)
+def handle_some_action(ack, body, client, logger):
     ack()
-    user = User.get_from_db(user_id)
-    optional_statuses = get_optional_statuses(
-        user=user,
-        issue_key=issue_key
-    )
-    if status not in optional_statuses:
-        # TODO: add error to view somehow
-        return
+    logger.info(body)
+
+
+@app.action(SELECT_STATUS_ISSUE_DAILY_FORM)
+def select_status_action(ack):
+    ack()
 
 
 @app.action(ISSUE_LINK_ACTION)
@@ -65,6 +62,7 @@ def general_comments_action(ack, body, logger):
 
 def get_details_from_view(view: dict) -> Tuple[List[DailyIssueReport], Optional[str]]:
     general_comments = None
+    ignore = []
     issues: Dict[str, DailyIssueReport] = {}
     for key, value in view['state']['values'].items():
         if key == GENERAL_COMMENTS_ACTION:
@@ -74,9 +72,16 @@ def get_details_from_view(view: dict) -> Tuple[List[DailyIssueReport], Optional[
             issue_report = issues.get(issue_key, DailyIssueReport(key=issue_key))
             if action == ISSUE_SUMMERY_ACTION:
                 issue_report.details = value[action]['value']
-            if action == SELECT_STATUS_ACTION:
-                issue_report.status = value[action]['selected_option']['value']
+            if action == ACTIONS_ISSUE_DAILY_FORM:
+                issue_report.status = value[SELECT_STATUS_ISSUE_DAILY_FORM]['selected_option']['value']
+                selected_options = value[IGNORE_ISSUE_IN_DAILY_FORM]['selected_options']
+                if selected_options and selected_options[0]['value'] == 'ignore-issue':
+                    ignore.append(issue_key)
+
             issues[issue_key] = issue_report
+
+    for issue_to_ignore in ignore:
+        issues.pop(issue_to_ignore)
 
     return list(issues.values()), general_comments
 
@@ -85,6 +90,8 @@ def get_details_from_view(view: dict) -> Tuple[List[DailyIssueReport], Optional[
 def handle_daily_submission(ack, body, view, logger):
     user = User.get_from_db(body['user']['id'])
     issue_reports, general_comments = get_details_from_view(view)
+    if not (issue_reports or general_comments):
+        return  # TODO: should show error that we didnt get anything to report
     daily = Daily.get_from_db(user.team)
     daily.reports[user.slack_data.user_id] = DailyReport(
         issue_reports=issue_reports,

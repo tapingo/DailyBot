@@ -4,11 +4,13 @@ from typing import List, Optional
 from jira import Issue
 from jira.resources import Status
 
-from dailybot.constants import DAILY_MODAL_SUBMISSION, SELECT_STATUS_ACTION, ISSUE_LINK_ACTION, ISSUE_SUMMERY_ACTION, \
+from dailybot.constants import DAILY_MODAL_SUBMISSION, ACTIONS_ISSUE_DAILY_FORM, ISSUE_LINK_ACTION, \
+    ISSUE_SUMMERY_ACTION, \
     GENERAL_COMMENTS_ACTION, BULK_ID_FORMAT, SAVE_USER_CONFIGURATIONS, SELECT_USER_TEAM, SELECT_USER_BOARD, \
     JIRA_EMAIL_ACTION, JIRA_API_TOKEN_ACTION, JIRA_SERVER_ACTION, JiraHostType, JIRA_HOST_TYPE, MAX_LEN_SLACK_SELECTOR, \
-    TYPE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, SAVE_USER_BOARD
-from dailybot.jira_utils import get_jira_projects, get_optional_transitions, get_optional_statuses
+    TYPE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, SAVE_USER_BOARD, IGNORE_ISSUE_IN_DAILY_FORM, \
+    SELECT_STATUS_ISSUE_DAILY_FORM
+from dailybot.jira_utils import get_jira_projects, get_optional_statuses
 from dailybot.mongodb import Team, User, SlackUserData, Daily, DailyIssueReport
 
 DIVIDER = {"type": "divider"}
@@ -54,7 +56,7 @@ def generate_issue_status_selector_component(status: Status, optional_statuses: 
         },
         "initial_option": initial_option,
         "options": options,
-        "action_id": SELECT_STATUS_ACTION
+        "action_id": SELECT_STATUS_ISSUE_DAILY_FORM
     }
 
 
@@ -74,8 +76,21 @@ def generate_issue_report_component(user: User, issue: Issue, issue_reports: Lis
         },
         {
             "type": "actions",
-            "block_id": BULK_ID_FORMAT.format(key=issue.key, action=SELECT_STATUS_ACTION),
+            "block_id": BULK_ID_FORMAT.format(key=issue.key, action=ACTIONS_ISSUE_DAILY_FORM),
             "elements": [
+                {
+                    "type": "checkboxes",
+                    "options": [
+                        {
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": "Ignore this issue"
+                            },
+                            "value": "ignore-issue"
+                        }
+                    ],
+                    "action_id": IGNORE_ISSUE_IN_DAILY_FORM
+                },
                 generate_issue_status_selector_component(
                     status=issue.get_field('status'),
                     optional_statuses=get_optional_statuses(

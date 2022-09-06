@@ -4,7 +4,8 @@ DAILY_MODAL = "daily"
 ADD_TEAM = "/add-team-daily"
 SHOW_DAILY = "/show-daily-report"
 DAILY_MODAL_SUBMISSION = "daily_modal_submission"
-SELECT_STATUS_ACTION = "select_status_action"
+ACTIONS_ISSUE_DAILY_FORM = "actions_issue_daily_form"
+SELECT_STATUS_ISSUE_DAILY_FORM = "select_status_issue_daily_form"
 ISSUE_LINK_ACTION = "issue_link_action"
 ISSUE_SUMMERY_ACTION = "issue_summery_action"
 GENERAL_COMMENTS_ACTION = "general_comments_action"
@@ -18,11 +19,13 @@ JIRA_HOST_TYPE = "jira_host_type"
 JIRA_SERVER_ACTION = 'jira_server_url_action'
 JIRA_EMAIL_ACTION = 'jira_email_action'
 JIRA_API_TOKEN_ACTION = 'jira_api_token_action'
+IGNORE_ISSUE_IN_DAILY_FORM = 'ignore-issue-in-daily-form'
 
 BULK_ID_SEPERATOR = "|"
 BULK_ID_FORMAT = "{key}" + BULK_ID_SEPERATOR + "{action}"
 
 MAX_LEN_SLACK_SELECTOR = 100
+
 
 class JiraHostType(Enum):
     Local = "Local"
