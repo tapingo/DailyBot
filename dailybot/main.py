@@ -3,15 +3,15 @@ from typing import Tuple, List, Optional, Dict
 
 from slack_bolt import App
 
-from dailybot.block_utils import generate_daily_modal, generate_home_tab_view, generate_user_from_config_action, \
-    generate_home_tab_view_set_jira_keys, generate_home_tab_view_user_configured, generate_user_not_exists_modal, \
-    generate_daily_message
-from dailybot.constants import DAILY_MODAL_SUBMISSION, ACTIONS_ISSUE_DAILY_FORM, ISSUE_LINK_ACTION, \
-    ISSUE_SUMMERY_ACTION, \
-    GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR, SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, \
-    DAILY_MODAL, SHOW_DAILY, ADD_TEAM, SAVE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, TYPE_USER_BOARD, \
-    IGNORE_ISSUE_IN_DAILY_FORM, SELECT_STATUS_ISSUE_DAILY_FORM
-from dailybot.jira_utils import get_my_issues, update_daily_report_status_and_enrich_status, get_optional_statuses
+from dailybot.block_utils import (generate_daily_modal, generate_home_tab_view, generate_user_from_config_action,
+                                  generate_home_tab_view_set_jira_keys, generate_home_tab_view_user_configured,
+                                  generate_user_not_exists_modal, generate_daily_message)
+from dailybot.constants import (DAILY_MODAL_SUBMISSION, ACTIONS_ISSUE_DAILY_FORM, ISSUE_LINK_ACTION,
+                                ISSUE_SUMMERY_ACTION, GENERAL_COMMENTS_ACTION, BULK_ID_SEPERATOR,
+                                SAVE_USER_CONFIGURATIONS, SELECT_USER_BOARD, SELECT_USER_TEAM, DAILY_MODAL, SHOW_DAILY,
+                                ADD_TEAM, SAVE_USER_BOARD, TYPE_OR_SELECT_USER_BOARD, TYPE_USER_BOARD,
+                                IGNORE_ISSUE_IN_DAILY_FORM, SELECT_STATUS_ISSUE_DAILY_FORM)
+from dailybot.jira_utils import get_my_issues, update_daily_report_status_and_enrich_status
 from dailybot.mongodb import Team, User, Daily, DailyIssueReport, DailyReport
 
 app = App(
