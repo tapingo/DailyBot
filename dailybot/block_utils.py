@@ -616,7 +616,7 @@ def generate_daily_message(user: User, daily: Daily, with_gui: bool = False):
             '\n'.join([
                 f"<@{user_id}>:",
                 '\n'.join([
-                    f" - <{issue.link}|{issue.key}> - {issue.status}{f' - {issue.details}' if issue.details else ''}"
+                    f" - <{issue.link}|{issue.summary}> - {issue.status}{f' - {issue.details}' if issue.details else ''}"
                     for issue in report.issue_reports
                 ])
             ]) + (f"\n - {report.general_comments}" if report.general_comments else '')
