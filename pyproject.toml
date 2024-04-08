@@ -16,7 +16,7 @@ python = ">=3.8,<4"
 jira = "^3.2.0"
 slack-bolt = "^1.14.3"
 urllib3 = "^1.26.12"
-pymongo = "^4.2.0"
+pymongo = "^4.6.3"
 dnspython = "^2.2.1"
 dacite = "^1.6.0"
 
