@@ -17,7 +17,7 @@ jira = "^3.2.0"
 slack-bolt = "^1.14.3"
 urllib3 = "^1.26.12"
 pymongo = "^4.2.0"
-dnspython = "^2.2.1"
+dnspython = "^2.6.1"
 dacite = "^1.6.0"
 
 [tool.poetry.dev-dependencies]
